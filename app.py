@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hmac
+from pathlib import Path
 
 import streamlit as st
 
 from ai_clients import AIResult, ComparisonAnalysis, ask_all, compare_answers
 
 
-st.set_page_config(page_title="AI壁打ち", page_icon="💭", layout="centered")
+APP_ICON = str(Path(__file__).parent / "app_icon.png")
+
+st.set_page_config(page_title="AI壁打ち", page_icon=APP_ICON, layout="centered")
 
 # スマートフォンで読みやすい余白と、押しやすいボタンだけを追加します。
 st.markdown(
