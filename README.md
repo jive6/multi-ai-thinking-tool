@@ -30,9 +30,12 @@ python3 -m pip install -r requirements.txt
 OPENAI_API_KEY = "..."
 ANTHROPIC_API_KEY = "..."
 GEMINI_API_KEY = "..."
+APP_PASSWORD = "好きな暗証番号"
 ```
 
 `secrets.toml` は `.gitignore` に含まれています。**APIキー入りのこのファイルは絶対にGitHubへアップロードしないでください。**
+
+`APP_PASSWORD` は公開したアプリを開くための暗証番号です。APIキーとは別の、推測されにくい文字列を設定してください。
 
 ### 4. アプリを起動する
 
@@ -55,11 +58,11 @@ streamlit run app.py
 1. このフォルダをGitHubの新しいリポジトリへアップロードします。`secrets.toml` が含まれていないことを確認します。
 2. [Streamlit Community Cloud](https://share.streamlit.io/) にログインし、「Create app」を選びます。
 3. GitHubのリポジトリ、ブランチ、`app.py` を選んで公開します。
-4. アプリ設定の「Secrets」を開き、ローカルと同じ3つのAPIキーを貼り付けて保存します。
+4. アプリ設定の「Secrets」を開き、ローカルと同じ3つのAPIキーと `APP_PASSWORD` を貼り付けて保存します。
 5. 公開URLを開き、短い質問で動作を確認します。
 
 ## 注意点
 
 - 初期モデル名は `config.py` にまとめています。提供元で利用可能なモデル名へ変更してください。
 - 1回の質問で、3つの回答取得と比較分析を合わせて最大4回のAPI呼び出しを行います。
-- 履歴保存、ログイン、ファイル添付、Web検索、回答の統合・順位付けは V0.1 の対象外です。
+- 履歴保存、本格的なユーザー認証、ファイル添付、Web検索、回答の統合・順位付けは V0.1 の対象外です。

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 import streamlit as st
 
 from ai_clients import AIResult, ComparisonAnalysis, ask_all, compare_answers
@@ -36,10 +38,38 @@ def get_secret(name: str) -> str:
 
 def initialize_state() -> None:
     """再描画しても直近の質問と回答を残す。"""
-    defaults = {"question": "", "results": {}, "comparison": None}
+    defaults = {"question": "", "results": {}, "comparison": None, "authenticated": False}
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def require_password() -> None:
+    """Secretsの暗証番号を確認できるまで本体を表示しない。"""
+    expected_password = get_secret("APP_PASSWORD")
+
+    if not expected_password:
+        st.error("APP_PASSWORD が設定されていません。")
+        st.caption(
+            ".streamlit/secrets.toml または Streamlit Community Cloud の Secrets に設定してください。"
+        )
+        st.stop()
+
+    if st.session_state["authenticated"]:
+        return
+
+    st.title("AI壁打ち")
+    st.caption("暗証番号を入力してください。")
+    entered_password = st.text_input("暗証番号", type="password")
+
+    if st.button("開く", type="primary"):
+        if hmac.compare_digest(entered_password, expected_password):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("暗証番号が違います。")
+
+    st.stop()
 
 
 def show_answer(result: AIResult, summary: str = "") -> None:
@@ -87,6 +117,7 @@ def show_comparison(analysis: ComparisonAnalysis) -> None:
 
 
 initialize_state()
+require_password()
 
 st.title("AI壁打ち")
 st.caption("ひとつの問いを複数のAIに投げて、考える材料を集めます。")
