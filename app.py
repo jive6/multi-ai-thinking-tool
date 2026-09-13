@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hmac
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from ai_clients import AIResult, ComparisonAnalysis, ask_all, compare_answers
+from history_store import get_history, list_history, make_client, restore_history, save_history
 
 
 APP_ICON = str(Path(__file__).parent / "app_icon.png")
@@ -41,7 +44,14 @@ def get_secret(name: str) -> str:
 
 def initialize_state() -> None:
     """再描画しても直近の質問と回答を残す。"""
-    defaults = {"question": "", "results": {}, "comparison": None, "authenticated": False}
+    defaults = {
+        "question": "",
+        "question_input": "",
+        "results": {},
+        "comparison": None,
+        "authenticated": False,
+        "history_notice": "",
+    }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -73,6 +83,89 @@ def require_password() -> None:
             st.error("暗証番号が違います。")
 
     st.stop()
+
+
+@st.cache_resource(show_spinner=False)
+def get_history_client(url: str, secret_key: str):
+    """再描画のたびにSupabase接続を作り直さない。"""
+    return make_client(url, secret_key)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_history_list(url: str, secret_key: str) -> list[dict]:
+    """履歴一覧は30秒だけ保持し、画面操作ごとの通信を減らす。"""
+    return list_history(get_history_client(url, secret_key))
+
+
+def safe_history_error(error: Exception, secret_key: str) -> str:
+    """Supabaseの秘密鍵を伏せて、設定確認に必要な範囲だけ表示する。"""
+    message = str(error).strip() or error.__class__.__name__
+    if secret_key:
+        message = message.replace(secret_key, "[REDACTED]")
+    return f"{error.__class__.__name__}: {message[:500]}"
+
+
+def format_history_label(item: dict) -> str:
+    """スマートフォンでも日時と質問の冒頭が読める表示名にする。"""
+    created_at = str(item.get("created_at") or "")
+    try:
+        parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        date_text = parsed.astimezone(ZoneInfo("Asia/Tokyo")).strftime("%Y/%m/%d %H:%M")
+    except ValueError:
+        date_text = "日時不明"
+
+    text = str(item.get("question_summary") or item.get("question") or "質問なし")
+    compact = " ".join(text.split())
+    if len(compact) > 42:
+        compact = f"{compact[:42]}…"
+    return f"{date_text}　{compact}"
+
+
+def show_history_panel():
+    """履歴一覧を表示し、選んだ1件を既存の回答画面へ復元する。"""
+    url = get_secret("SUPABASE_URL")
+    secret_key = get_secret("SUPABASE_SECRET_KEY")
+
+    with st.expander("過去の質問を見る", expanded=False):
+        if not url or not secret_key:
+            st.caption("Supabaseを設定すると、アプリを閉じた後も履歴が残ります。")
+            return None
+
+        try:
+            client = get_history_client(url, secret_key)
+            items = get_history_list(url, secret_key)
+        except Exception as error:
+            st.warning(f"履歴を読み込めませんでした。{safe_history_error(error, secret_key)}")
+            return None
+
+        if not items:
+            st.caption("保存された質問はまだありません。")
+            return client
+
+        labels = {str(item["id"]): format_history_label(item) for item in items}
+        selected_id = st.selectbox(
+            "見たい質問を選ぶ",
+            options=[""] + list(labels),
+            format_func=lambda value: "選択してください" if not value else labels[value],
+            key="selected_history_id",
+        )
+
+        if st.button("この履歴を開く", disabled=not selected_id, key="open_history"):
+            try:
+                record = get_history(client, selected_id)
+                if not record:
+                    raise ValueError("選択した履歴が見つかりません")
+                question, results, comparison = restore_history(record)
+                st.session_state["question"] = question
+                st.session_state["question_input"] = question
+                st.session_state["results"] = results
+                st.session_state["comparison"] = comparison
+                st.session_state["history_notice"] = "過去の質問を開きました。"
+                st.rerun()
+            except Exception as error:
+                st.warning(f"履歴を開けませんでした。{safe_history_error(error, secret_key)}")
+
+        return client
 
 
 def show_answer(result: AIResult, summary: str = "") -> None:
@@ -125,11 +218,17 @@ require_password()
 st.title("AI壁打ち")
 st.caption("ひとつの問いを複数のAIに投げて、考える材料を集めます。")
 
+history_client = show_history_panel()
+
+if st.session_state["history_notice"]:
+    st.success(st.session_state["history_notice"])
+    st.session_state["history_notice"] = ""
+
 question = st.text_area(
     "いま何について考えたい？",
-    value=st.session_state.question,
     height=190,
     placeholder="たとえば、個人事業でサービスを増やすべきか、一つに絞るべきか？",
+    key="question_input",
 )
 
 if st.button("3つのAIに聞く", type="primary"):
@@ -157,6 +256,23 @@ if st.button("3つのAIに聞く", type="primary"):
             st.session_state.comparison = AIResult(
                 name="回答の違い", error="比較には2つ以上のAI回答が必要です"
             )
+
+        if history_client:
+            try:
+                save_history(
+                    history_client,
+                    cleaned_question,
+                    st.session_state.results,
+                    st.session_state.comparison,
+                )
+                get_history_list.clear()
+                st.success("今回の質問を履歴に保存しました。")
+            except Exception as error:
+                secret_key = get_secret("SUPABASE_SECRET_KEY")
+                st.warning(
+                    "回答は表示できますが、履歴の保存に失敗しました。"
+                    f"{safe_history_error(error, secret_key)}"
+                )
 
 if st.session_state.results:
     comparison = st.session_state.comparison
