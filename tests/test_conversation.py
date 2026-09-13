@@ -54,6 +54,9 @@ class Store:
                 raise httpx.ReadTimeout("response lost", request=request)
             return httpx.Response(201, json=[self.rows[0]])
         params = request.url.params
+        if params.get("select") == "usage_events:results->_usage_events":
+            offset, limit = int(params.get("offset", 0)), int(params.get("limit", 100))
+            return httpx.Response(200, json=[{"usage_events": row["results"].get("_usage_events")} for row in self.rows[offset:offset + limit]])
         if "id" in params:
             return httpx.Response(200, json=[row for row in self.rows if "eq." + row["id"] == params["id"]])
         assert "conversation_id:results->>_conversation_id" in params["select"]

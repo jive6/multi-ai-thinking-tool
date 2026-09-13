@@ -13,6 +13,8 @@ import streamlit as st
 from ai_clients import AIResult, ComparisonAnalysis, ask_all, compare_answers
 from history_store import get_history, list_history, make_client, restore_conversation, save_history
 from prompts import build_conversation_input
+from usage_data import turn_usage
+from usage_panel import load_usage, show_usage_panel
 
 
 APP_ICON = str(Path(__file__).parent / "app_icon.png")
@@ -58,6 +60,7 @@ def initialize_state() -> None:
         "pending_save_id": None,
         "save_error": "",
         "composer_version": 0,
+        "usage_events": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -282,6 +285,7 @@ def persist_conversation(client) -> None:
         st.session_state["pending_save_id"] = None
         st.session_state["save_error"] = ""
         get_history_list.clear()
+        load_usage.clear()
         st.session_state["history_notice"] = "今回のやりとりを履歴に保存しました。"
     except Exception as error:
         st.session_state["save_error"] = safe_history_error(error, get_secret("SUPABASE_SECRET_KEY"))
@@ -294,6 +298,10 @@ st.title("AI壁打ち")
 st.caption("ひとつの問いを複数のAIに投げて、考える材料を集めます。")
 
 history_client = show_history_panel()
+show_usage_panel(
+    history_client, get_secret("SUPABASE_URL"), get_secret("SUPABASE_SECRET_KEY"),
+    st.session_state["usage_events"],
+)
 
 if st.session_state["history_notice"]:
     st.success(st.session_state["history_notice"])
@@ -356,6 +364,7 @@ if st.button("3つのAIに続きを聞く" if turns else "3つのAIに聞く", t
             else:
                 comparison = AIResult(name="回答の違い", error="比較には2つ以上のAI回答が必要です")
             st.session_state["turns"] = turns + [{"question": cleaned_question, "results": results, "comparison": comparison}]
+            st.session_state["usage_events"].extend(turn_usage(st.session_state["turns"][-1]))
             st.session_state["composer_version"] += 1
             if get_secret("SUPABASE_URL") or get_secret("SUPABASE_SECRET_KEY"):
                 st.session_state["pending_save_id"] = str(uuid4())

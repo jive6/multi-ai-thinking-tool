@@ -8,6 +8,7 @@ from uuid import uuid4
 from supabase import Client, create_client
 
 from ai_clients import AIResult, ComparisonAnalysis
+from usage_data import UsageRecord, turn_usage
 
 
 HISTORY_TABLE = "ai_history"
@@ -26,6 +27,7 @@ def _serialize_result(result: AIResult | None) -> dict[str, Any] | None:
         "answer": result.answer,
         "error": result.error,
         "analysis": result.analysis.model_dump(mode="json") if result.analysis else None,
+        "usage": result.usage.model_dump(mode="json") if result.usage else None,
     }
 
 
@@ -38,11 +40,16 @@ def _deserialize_result(data: Any) -> AIResult | None:
         if isinstance(analysis_data, dict)
         else None
     )
+    try:
+        usage = UsageRecord.model_validate(data["usage"]) if data.get("usage") else None
+    except ValueError:
+        usage = None  # 使用量が不正でも回答原文を開けるようにする
     return AIResult(
         name=str(data.get("name") or "AI"),
         answer=data.get("answer") if isinstance(data.get("answer"), str) else None,
         error=data.get("error") if isinstance(data.get("error"), str) else None,
         analysis=analysis,
+        usage=usage,
     )
 
 
@@ -78,6 +85,8 @@ def save_history(
             }
             for turn in turns
         ]
+    current_turn = turns[-1] if turns else {"results": results, "comparison": comparison}
+    payload["results"]["_usage_events"] = turn_usage(current_turn)
     try:
         client.table(HISTORY_TABLE).insert(payload).execute()
     except Exception as error:
@@ -88,6 +97,28 @@ def save_history(
         if not existing or any(existing.get(key) != value for key, value in payload.items()):
             raise
     return payload["id"]
+
+
+def list_usage(client: Client, since: str) -> list[dict]:
+    """質問・回答本文を取得せず、今月の各API実行の使用量だけ読む。"""
+    events = []
+    offset = 0
+    while True:
+        response = (
+            client.table(HISTORY_TABLE)
+            .select("usage_events:results->_usage_events")
+            .gte("created_at", since)
+            .order("created_at").order("id")
+            .range(offset, offset + 99)
+            .execute()
+        )
+        rows = response.data or []
+        for row in rows:
+            if isinstance(row.get("usage_events"), list):
+                events.extend(row["usage_events"])
+        if len(rows) < 100:
+            return events
+        offset += 100
 
 
 def list_history(client: Client, limit: int = 50) -> list[dict[str, Any]]:
