@@ -1,0 +1,26 @@
+# APIキーやローカル設定は絶対に追跡しない
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+secrets.toml
+credentials.json
+*.key
+*.pem
+
+# Python の作業ファイル
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.streamlit/cache/
+
+# OS・エディタの一時ファイル
+.DS_Store
+.idea/
+.vscode/
