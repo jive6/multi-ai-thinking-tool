@@ -22,7 +22,7 @@ from config import (
     OPENAI_MAX_OUTPUT_TOKENS,
     OPENAI_MODEL,
 )
-from prompts import COMMON_SYSTEM_PROMPT, COMPARISON_SYSTEM_PROMPT, build_comparison_input
+from prompts import COMMON_SYSTEM_PROMPT, COMPARISON_SYSTEM_PROMPT, build_comparison_input, build_conversation_input
 
 
 logger = logging.getLogger(__name__)
@@ -151,12 +151,13 @@ def ask_gemini(question: str, api_key: str) -> AIResult:
         return AIResult(name="Gemini", error=details)
 
 
-def ask_all(question: str, keys: dict[str, str]) -> dict[str, AIResult]:
+def ask_all(question: str, keys: dict[str, str], turns: list | None = None) -> dict[str, AIResult]:
     """3社への問い合わせを同時に始め、遅いAPIが他を止めないようにする。"""
+    inputs = {name: build_conversation_input(question, turns or [], name) for name in ("ChatGPT", "Claude", "Gemini")}
     jobs: dict[str, Callable[[], AIResult]] = {
-        "ChatGPT": lambda: ask_openai(question, keys.get("OPENAI_API_KEY", "")),
-        "Claude": lambda: ask_anthropic(question, keys.get("ANTHROPIC_API_KEY", "")),
-        "Gemini": lambda: ask_gemini(question, keys.get("GEMINI_API_KEY", "")),
+        "ChatGPT": lambda: ask_openai(inputs["ChatGPT"], keys.get("OPENAI_API_KEY", "")),
+        "Claude": lambda: ask_anthropic(inputs["Claude"], keys.get("ANTHROPIC_API_KEY", "")),
+        "Gemini": lambda: ask_gemini(inputs["Gemini"], keys.get("GEMINI_API_KEY", "")),
     }
     results: dict[str, AIResult] = {}
     with ThreadPoolExecutor(max_workers=3) as executor:
