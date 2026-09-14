@@ -132,7 +132,7 @@ def format_history_label(item: dict) -> str:
     except ValueError:
         date_text = "日時不明"
 
-    text = str(item.get("question_summary") or item.get("question") or "質問なし")
+    text = str(item.get("question_summary") or "質問の要約なし")
     compact = " ".join(text.split())
     if len(compact) > 42:
         compact = f"{compact[:42]}…"

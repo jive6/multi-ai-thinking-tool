@@ -121,31 +121,23 @@ def list_usage(client: Client, since: str) -> list[dict]:
         offset += 100
 
 
-def list_history(client: Client, limit: int = 50) -> list[dict[str, Any]]:
-    """一覧表示に必要な軽い項目だけを、新しい順に取得する。"""
-    # 同じ相談の保存時点ごとのコピーをまとめ、最新の状態だけ一覧に出す。
+def list_history(client: Client, limit: int = 20) -> list[dict[str, Any]]:
+    """一覧は新しい20件の軽量なメタデータだけを、1回で取得する。"""
+    response = (
+        client.table(HISTORY_TABLE)
+        .select("id,created_at,question_summary,conversation_id:results->>_conversation_id")
+        .order("created_at", desc=True)
+        .order("id", desc=True)
+        .range(0, limit - 1)
+        .execute()
+    )
+    # 取得するのは最大20行の小さなメタデータだけ。会話の保存時点の重複をここで隠す。
     items, seen = [], set()
-    offset = 0
-    while len(items) < limit:
-        response = (
-            client.table(HISTORY_TABLE)
-            .select("id,created_at,question,question_summary,conversation_id:results->>_conversation_id")
-            .order("created_at", desc=True)
-            .order("id", desc=True)
-            .range(offset, offset + 99)
-            .execute()
-        )
-        rows = response.data or []
-        for row in rows:
-            conversation_id = row.get("conversation_id") or row["id"]
-            if conversation_id not in seen:
-                seen.add(conversation_id)
-                items.append(row)
-                if len(items) == limit:
-                    break
-        if len(rows) < 100:
-            break
-        offset += 100
+    for row in response.data or []:
+        conversation_id = row.get("conversation_id") or row["id"]
+        if conversation_id not in seen:
+            seen.add(conversation_id)
+            items.append(row)
     return items
 
 

@@ -59,10 +59,10 @@ class Store:
             return httpx.Response(200, json=[{"usage_events": row["results"].get("_usage_events")} for row in self.rows[offset:offset + limit]])
         if "id" in params:
             return httpx.Response(200, json=[row for row in self.rows if "eq." + row["id"] == params["id"]])
-        assert "conversation_id:results->>_conversation_id" in params["select"]
-        offset, limit = int(params.get("offset", 0)), int(params.get("limit", 100))
+        assert params["select"] == "id,created_at,question_summary,conversation_id:results->>_conversation_id"
+        offset, limit = int(params.get("offset", 0)), int(params.get("limit", 20))
         return httpx.Response(200, json=[{
-            **{key: row[key] for key in ("id", "created_at", "question", "question_summary")},
+            **{key: row[key] for key in ("id", "created_at", "question_summary")},
             "conversation_id": row["results"].get("_conversation_id"),
         } for row in self.rows[offset:offset + limit]])
 
